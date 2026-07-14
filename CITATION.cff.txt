@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this code or results, please cite as below."
+title: "Evaluating the Interaction Between Class Imbalance and Data Minimization in Machine Learning Risk Outcomes"
+authors:
+  - family-names: "Osilesi"
+    given-names: "Tayo"
+type: software
+year: 2026
+url: "https://github.com/YOURUSERNAME/imbalance-minimization-ml-dissertation"
+notes: "Dissertation, University of the Cumberlands, PhD in Information Technology."

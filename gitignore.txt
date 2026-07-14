@@ -1,0 +1,21 @@
+# Data files (linked, not committed)
+data/*.csv
+data/*.data
+*.zip
+
+# W&B local run folders and logs
+wandb/
+*.log
+
+# Credentials, never commit
+.netrc
+*.pem
+.env
+
+# Python and Jupyter noise
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS noise
+.DS_Store

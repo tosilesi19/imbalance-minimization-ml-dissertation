@@ -3,7 +3,7 @@
 Computational experiment and analysis code for a PhD dissertation in
 Information Technology, University of the Cumberlands.
 
-**Author:** Tayo Osilesi | [Website](https://YOURSITE.com) | [LinkedIn](www.linkedin.com/in/tayo-osilesi-mba-cissp-a2036526)
+**Author:** Tayo Osilesi | [Website](https://YOURSITE.com) | [LinkedIn](www.linkedin.com/in/tayo-osilesi-mba-cissp-a2036526) | [Email](tosilesi@gmail.com)
 
 ## Overview
 

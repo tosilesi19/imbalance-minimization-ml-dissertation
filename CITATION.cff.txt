@@ -6,5 +6,5 @@ authors:
     given-names: "Tayo"
 type: software
 year: 2026
-url: "https://github.com/YOURUSERNAME/imbalance-minimization-ml-dissertation"
+url: "https://github.com/tosilesi19/imbalance-minimization-ml-dissertation"
 notes: "Dissertation, University of the Cumberlands, PhD in Information Technology."

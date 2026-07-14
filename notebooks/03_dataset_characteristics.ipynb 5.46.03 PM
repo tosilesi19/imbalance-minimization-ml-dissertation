@@ -1,0 +1,152 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "a177775d-0f06-47ef-a922-639a2ae5e801",
+   "metadata": {},
+   "source": [
+    "# 03: Dataset Characteristics Table\n",
+    "\n",
+    "Generates the dataset characteristics summary (output #2 of the study's\n",
+    "output inventory), destined for Chapter Four, Participants and Research\n",
+    "Setting, as Table 2. Reads both processed files so reported figures are\n",
+    "derived, not typed. Expected: Adult 32,561 x 42; Diabetes 101,766 x 108."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "aa1463e1-e286-44bf-9793-736cdbbd002f",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "\n",
+    "BUCKET = \"osilesi-dissertation-data-2026\"   # your bucket name\n",
+    "pd.set_option(\"display.max_columns\", None)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "480c4413-2297-478c-9339-6414e379ee26",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Dataset</th>\n",
+       "      <th>Observations</th>\n",
+       "      <th>Features</th>\n",
+       "      <th>Positive class %</th>\n",
+       "      <th>Female %</th>\n",
+       "      <th>Missing values</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>Adult (Financial)</td>\n",
+       "      <td>32561</td>\n",
+       "      <td>42</td>\n",
+       "      <td>24.1</td>\n",
+       "      <td>33.1</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>Diabetes (Healthcare)</td>\n",
+       "      <td>101766</td>\n",
+       "      <td>108</td>\n",
+       "      <td>46.1</td>\n",
+       "      <td>53.8</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "                 Dataset  Observations  Features  Positive class %  Female %  \\\n",
+       "0      Adult (Financial)         32561        42              24.1      33.1   \n",
+       "1  Diabetes (Healthcare)        101766       108              46.1      53.8   \n",
+       "\n",
+       "   Missing values  \n",
+       "0               0  \n",
+       "1               0  "
+      ]
+     },
+     "execution_count": 2,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "rows = []\n",
+    "for name, path in [(\"Adult (Financial)\", \"adult_final_pruned.csv\"),\n",
+    "                   (\"Diabetes (Healthcare)\", \"health_final_pruned.csv\")]:\n",
+    "    df = pd.read_csv(f\"s3://{BUCKET}/processed/{path}\")\n",
+    "    rows.append({\n",
+    "        \"Dataset\": name,\n",
+    "        \"Observations\": df.shape[0],\n",
+    "        \"Features\": df.shape[1] - 1,\n",
+    "        \"Positive class %\": round(df[\"target\"].mean() * 100, 1),\n",
+    "        \"Female %\": round(df[\"sex_female\"].mean() * 100, 1),\n",
+    "        \"Missing values\": int(df.isna().sum().sum())\n",
+    "    })\n",
+    "\n",
+    "chars = pd.DataFrame(rows)\n",
+    "chars.to_csv(\"dataset_characteristics.csv\", index=False)\n",
+    "chars"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "21b6d27a-fb52-4d91-ac35-7f1dc79e5b73",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "conda_python3",
+   "language": "python",
+   "name": "conda_python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.20"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

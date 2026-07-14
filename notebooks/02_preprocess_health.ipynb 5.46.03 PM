@@ -1,0 +1,311 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "968d12b5-084a-48a1-a5d0-4658279be109",
+   "metadata": {},
+   "source": [
+    "# 02: Preprocessing, Diabetes 130-US Hospitals Dataset\n",
+    "\n",
+    "Transforms the raw UCI Diabetes 130-US Hospitals file (Strack et al.,\n",
+    "2014) into the analysis dataset, binary target (any\n",
+    "readmission = 1, base rate ~46%), and fairness attribute `sex_female`.\n",
+    "\n",
+    "Raw input: s3://osilesi-dissertation-data/raw/diabetic_data.csv\n",
+    "Output: s3://osilesi-dissertation-data/processed/health_final_pruned.csv"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "34ca5e08-8f4e-409b-8dd4-5117c6b94ad2",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "\n",
+    "BUCKET = \"osilesi-dissertation-data-2026\"   # bucket name\n",
+    "pd.set_option(\"display.max_columns\", None)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "c3f4a9e0-2568-4916-b81e-c68530f0d81c",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(101766, 50)\n"
+     ]
+    }
+   ],
+   "source": [
+    "diab = pd.read_csv(f\"s3://{BUCKET}/raw/diabetic_data.csv\")\n",
+    "print(diab.shape)    # expect (101766, 50)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "85c9ac2e-db79-42d3-b9f5-c1764d697e86",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "weight               98569\n",
+      "medical_specialty    49949\n",
+      "payer_code           40256\n",
+      "race                  2273\n",
+      "diag_3                1423\n",
+      "diag_2                 358\n",
+      "diag_1                  21\n",
+      "dtype: int64\n"
+     ]
+    }
+   ],
+   "source": [
+    "miss = (diab == \"?\").sum()\n",
+    "print(miss[miss > 0].sort_values(ascending=False))\n",
+    "# weight ~97%, medical_specialty ~49%, payer_code ~40%, plus race and diagnosis codes"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "1cac3aa6-0922-4e64-b367-7e3e208cbd11",
+   "metadata": {},
+   "source": [
+    "## Drop decisions, Diabetes\n",
+    "\n",
+    "- weight: ~97% missing, \n",
+    "- payer_code: ~40% missing,\n",
+    "- medical_specialty: ~49% missing, \n",
+    "- encounter_id, patient_nbr: row identifiers, no predictive content\n",
+    "- 23 individual medication columns (metformin ... metformin-pioglitazone):\n",
+    "  not required for this study\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "661eba83-dc48-41f3-9c77-d8430f524c00",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "diab = diab.drop(columns=[\"weight\", \"payer_code\", \"medical_specialty\",\n",
+    "                          \"encounter_id\", \"patient_nbr\"])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "b4d8cced-80ca-4cae-bc05-783ba43f491c",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "23 medication columns\n"
+     ]
+    }
+   ],
+   "source": [
+    "med_cols = diab.loc[:, \"metformin\":\"metformin-pioglitazone\"].columns.tolist()\n",
+    "print(len(med_cols), \"medication columns\")   # ~23\n",
+    "diab = diab.drop(columns=med_cols)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "4de49b5a-5ad8-40af-a9fd-cea9b712830f",
+   "metadata": {},
+   "source": [
+    "## Target construction\n",
+    "\n",
+    "Binary readmission: both \"<30\" and \">30\" map to 1 (any readmission);\n",
+    "\"NO\" maps to 0. Base rate ~46% positive at full data; experimental\n",
+    "class ratios are imposed downstream by apply_imbalance, not here."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "a2048187-e0c6-49fe-9349-d2d365a90156",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "target\n",
+      "0    0.539119\n",
+      "1    0.460881\n",
+      "Name: proportion, dtype: float64\n"
+     ]
+    }
+   ],
+   "source": [
+    "diab[\"target\"] = (diab[\"readmitted\"] != \"NO\").astype(int)\n",
+    "diab = diab.drop(columns=[\"readmitted\"])\n",
+    "print(diab[\"target\"].value_counts(normalize=True))   # ~0.46 positive"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "d8e6b4fc-6bc0-4969-91a3-4cf030d4ca3e",
+   "metadata": {},
+   "source": [
+    "## Gender handling\n",
+    "\n",
+    "The raw gender column contains a small number of \"Unknown/Invalid\"\n",
+    "values. Rows should not be dropped at this juncture, so sex_female = 1 for \"Female\" and 0 otherwise; Unknown/Invalid\n",
+    "rows fall into the non-female group. \n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "fad40fce-b781-48cb-a378-729ffabccd96",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "gender\n",
+      "Female             54708\n",
+      "Male               47055\n",
+      "Unknown/Invalid        3\n",
+      "Name: count, dtype: int64\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(diab[\"gender\"].value_counts())\n",
+    "diab[\"sex_female\"] = (diab[\"gender\"] == \"Female\").astype(int)\n",
+    "diab = diab.drop(columns=[\"gender\"])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "bd3fcf9e-f5b0-47aa-ad2b-fb661299ca22",
+   "metadata": {},
+   "source": [
+    "## Rare diagnosis code consolidation\n",
+    "\n",
+    "Implements self-imposed rule that diagnosis codes appearing in <1% of records are removed: rare codes in diag_1/diag_2/diag_3 are grouped into \"Other\" before encoding, so every resulting indicator column clears the 1% floor.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "0cde6c2d-0d8b-4e98-a48c-65f1c83fe070",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "diag_1 levels kept: 24\n",
+      "diag_2 levels kept: 25\n",
+      "diag_3 levels kept: 21\n"
+     ]
+    }
+   ],
+   "source": [
+    "diab = diab.replace(\"?\", \"Unknown\")\n",
+    "\n",
+    "for c in [\"diag_1\", \"diag_2\", \"diag_3\"]:\n",
+    "    freq = diab[c].value_counts(normalize=True)\n",
+    "    rare = freq[freq < 0.01].index\n",
+    "    diab[c] = diab[c].where(~diab[c].isin(rare), \"Other\")\n",
+    "    print(c, \"levels kept:\", diab[c].nunique())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "fa7cdffa-0e4b-4a6f-a06c-abc86e851cb8",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Encoding: ['race', 'age', 'diag_1', 'diag_2', 'diag_3', 'max_glu_serum', 'A1Cresult', 'change', 'diabetesMed']\n",
+      "Features: 108 (Chapter Three states 108)\n"
+     ]
+    }
+   ],
+   "source": [
+    "cat_cols = diab.select_dtypes(include=\"object\").columns.tolist()\n",
+    "print(\"Encoding:\", cat_cols)\n",
+    "diab = pd.get_dummies(diab, columns=cat_cols, dtype=int)\n",
+    "\n",
+    "n_features = diab.shape[1] - 1\n",
+    "assert n_features == 108, f\"Feature count off: {n_features}\"\n",
+    "assert diab.shape[0] == 101766, f\"Row count off: {diab.shape[0]}\"\n",
+    "assert diab.isna().sum().sum() == 0\n",
+    "assert \"sex_female\" in diab.columns\n",
+    "print(f\"Features: {n_features} (Chapter Three states 108)\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "8f35ad52-1160-4dcb-8a0b-c34793465029",
+   "metadata": {},
+   "source": [
+    "## Validation gate: PASSED [2026-08-14]\n",
+    "\n",
+    "101,766 rows; 108 features (excl. target); 0 missing values; sex_female\n",
+    "present; positive class ~46%. \n",
+    "Output written to /processed."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "55c9bb96-58c4-48b4-bfb6-ec08d036c5bd",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "diab.to_csv(f\"s3://{BUCKET}/processed/health_final_pruned.csv\", index=False)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "afe05c25-8a08-47d0-b707-99aafdb947a2",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "conda_python3",
+   "language": "python",
+   "name": "conda_python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.20"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

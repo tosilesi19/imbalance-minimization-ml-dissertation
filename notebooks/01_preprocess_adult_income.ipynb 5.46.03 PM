@@ -1,0 +1,453 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "63147df9-9634-4230-8eaf-8da90f73d0a7",
+   "metadata": {},
+   "source": [
+    "# 01: Preprocessing, Adult Income Dataset\n",
+    "\n",
+    "Transforms the raw UCI Adult census file (Kohavi, 1996) into the analysis\n",
+    "dataset specified in Ch. 3, binary target (income >$50K = 1, base rate ~24%),\n",
+    "and explicit binary fairness attribute `sex_female` (female = protected\n",
+    "subgroup per Ch. 3).\n",
+    "\n",
+    "Raw input: s3://osilesi-dissertation-data/raw/adult.data (never modified).\n",
+    "Output: s3://osilesi-dissertation-data/processed/adult_final_pruned.csv"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "798e13b8-363d-4112-a3e9-16739a07c047",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "\n",
+    "BUCKET = \"osilesi-dissertation-data-2026\"   # bucket name\n",
+    "pd.set_option(\"display.max_columns\", None)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "d00be660-cf21-4a5c-b075-50568c1585a0",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(32561, 15)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>age</th>\n",
+       "      <th>workclass</th>\n",
+       "      <th>fnlwgt</th>\n",
+       "      <th>education</th>\n",
+       "      <th>education_num</th>\n",
+       "      <th>marital_status</th>\n",
+       "      <th>occupation</th>\n",
+       "      <th>relationship</th>\n",
+       "      <th>race</th>\n",
+       "      <th>sex</th>\n",
+       "      <th>capital_gain</th>\n",
+       "      <th>capital_loss</th>\n",
+       "      <th>hours_per_week</th>\n",
+       "      <th>native_country</th>\n",
+       "      <th>income</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>39</td>\n",
+       "      <td>State-gov</td>\n",
+       "      <td>77516</td>\n",
+       "      <td>Bachelors</td>\n",
+       "      <td>13</td>\n",
+       "      <td>Never-married</td>\n",
+       "      <td>Adm-clerical</td>\n",
+       "      <td>Not-in-family</td>\n",
+       "      <td>White</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>2174</td>\n",
+       "      <td>0</td>\n",
+       "      <td>40</td>\n",
+       "      <td>United-States</td>\n",
+       "      <td>&lt;=50K</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>50</td>\n",
+       "      <td>Self-emp-not-inc</td>\n",
+       "      <td>83311</td>\n",
+       "      <td>Bachelors</td>\n",
+       "      <td>13</td>\n",
+       "      <td>Married-civ-spouse</td>\n",
+       "      <td>Exec-managerial</td>\n",
+       "      <td>Husband</td>\n",
+       "      <td>White</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>13</td>\n",
+       "      <td>United-States</td>\n",
+       "      <td>&lt;=50K</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>38</td>\n",
+       "      <td>Private</td>\n",
+       "      <td>215646</td>\n",
+       "      <td>HS-grad</td>\n",
+       "      <td>9</td>\n",
+       "      <td>Divorced</td>\n",
+       "      <td>Handlers-cleaners</td>\n",
+       "      <td>Not-in-family</td>\n",
+       "      <td>White</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>40</td>\n",
+       "      <td>United-States</td>\n",
+       "      <td>&lt;=50K</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>53</td>\n",
+       "      <td>Private</td>\n",
+       "      <td>234721</td>\n",
+       "      <td>11th</td>\n",
+       "      <td>7</td>\n",
+       "      <td>Married-civ-spouse</td>\n",
+       "      <td>Handlers-cleaners</td>\n",
+       "      <td>Husband</td>\n",
+       "      <td>Black</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>40</td>\n",
+       "      <td>United-States</td>\n",
+       "      <td>&lt;=50K</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>28</td>\n",
+       "      <td>Private</td>\n",
+       "      <td>338409</td>\n",
+       "      <td>Bachelors</td>\n",
+       "      <td>13</td>\n",
+       "      <td>Married-civ-spouse</td>\n",
+       "      <td>Prof-specialty</td>\n",
+       "      <td>Wife</td>\n",
+       "      <td>Black</td>\n",
+       "      <td>Female</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>40</td>\n",
+       "      <td>Cuba</td>\n",
+       "      <td>&lt;=50K</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   age         workclass  fnlwgt  education  education_num  \\\n",
+       "0   39         State-gov   77516  Bachelors             13   \n",
+       "1   50  Self-emp-not-inc   83311  Bachelors             13   \n",
+       "2   38           Private  215646    HS-grad              9   \n",
+       "3   53           Private  234721       11th              7   \n",
+       "4   28           Private  338409  Bachelors             13   \n",
+       "\n",
+       "       marital_status         occupation   relationship   race     sex  \\\n",
+       "0       Never-married       Adm-clerical  Not-in-family  White    Male   \n",
+       "1  Married-civ-spouse    Exec-managerial        Husband  White    Male   \n",
+       "2            Divorced  Handlers-cleaners  Not-in-family  White    Male   \n",
+       "3  Married-civ-spouse  Handlers-cleaners        Husband  Black    Male   \n",
+       "4  Married-civ-spouse     Prof-specialty           Wife  Black  Female   \n",
+       "\n",
+       "   capital_gain  capital_loss  hours_per_week native_country income  \n",
+       "0          2174             0              40  United-States  <=50K  \n",
+       "1             0             0              13  United-States  <=50K  \n",
+       "2             0             0              40  United-States  <=50K  \n",
+       "3             0             0              40  United-States  <=50K  \n",
+       "4             0             0              40           Cuba  <=50K  "
+      ]
+     },
+     "execution_count": 14,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "cols = [\"age\", \"workclass\", \"fnlwgt\", \"education\", \"education_num\",\n",
+    "        \"marital_status\", \"occupation\", \"relationship\", \"race\", \"sex\",\n",
+    "        \"capital_gain\", \"capital_loss\", \"hours_per_week\",\n",
+    "        \"native_country\", \"income\"]\n",
+    "\n",
+    "adult = pd.read_csv(f\"s3://{BUCKET}/raw/adult.data\",\n",
+    "                    header=None, names=cols, skipinitialspace=True)\n",
+    "\n",
+    "print(adult.shape)          # expect (32561, 15)\n",
+    "adult.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "306b98dc-6dd9-4c00-81c4-133ce64ead20",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "workclass 1836\n",
+      "occupation 1843\n",
+      "native_country 583\n"
+     ]
+    }
+   ],
+   "source": [
+    "for c in adult.columns:\n",
+    "    n = (adult[c] == \"?\").sum()\n",
+    "    if n: print(c, n)\n",
+    "# expect: workclass ~1836, occupation ~1843, native_country ~583"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "272683ae-e888-4cc1-bd76-7ca352897cb7",
+   "metadata": {},
+   "source": [
+    "## Missing value strategy\n",
+    "\n",
+    "Adult encodes missingness as \"?\" (workclass ~1,836; occupation ~1,843;\n",
+    "native_country ~583). Rows are NOT dropped: \"?\" is recoded to an explicit \"Unknown\" category,\n",
+    "which survives one-hot encoding as its own indicator column."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "id": "3743e024-2845-403e-9af2-90dc09653353",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "adult = adult.replace(\"?\", \"Unknown\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "dc72ce6e-def6-4776-9655-36fc476b6936",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "target\n",
+      "0    0.75919\n",
+      "1    0.24081\n",
+      "Name: proportion, dtype: float64\n"
+     ]
+    }
+   ],
+   "source": [
+    "adult[\"target\"] = (adult[\"income\"] == \">50K\").astype(int)\n",
+    "adult = adult.drop(columns=[\"income\"])\n",
+    "print(adult[\"target\"].value_counts(normalize=True))   # expect ~0.24 positive"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "04c93edf-01c3-4939-9e16-a5e9015467d0",
+   "metadata": {},
+   "source": [
+    "## Drop decisions, Adult\n",
+    "\n",
+    "- fnlwgt: census sampling weight, not a person-level attribute\n",
+    "- education: fully redundant with ordinal education_num\n",
+    "- native_country: sparse categorical\n",
+    "- relationship: proxy attribute\n",
+    "- sex (raw): replaced by explicit binary sex_female before encoding"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "id": "ec439c72-796b-439f-8259-893962e21794",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(32561, 11)\n"
+     ]
+    }
+   ],
+   "source": [
+    "drop_cols = [\"fnlwgt\", \"education\", \"native_country\", \"relationship\"]\n",
+    "adult = adult.drop(columns=drop_cols)\n",
+    "print(adult.shape)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "0ebce8e8-f29d-4c66-b05f-7c775d3dc482",
+   "metadata": {},
+   "source": [
+    "## Fairness attribute construction\n",
+    "\n",
+    "`sex_female` is built as an explicit binary column BEFORE one-hot\n",
+    "encoding so it can never be silently lost or renamed. It is the sole protected attribute in the design and is\n",
+    "protected from removal throughout the pipeline."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "id": "5378e97a-aeca-43e9-947c-776693386955",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "sex_female\n",
+      "0    0.669205\n",
+      "1    0.330795\n",
+      "Name: proportion, dtype: float64\n"
+     ]
+    }
+   ],
+   "source": [
+    "adult[\"sex_female\"] = (adult[\"sex\"] == \"Female\").astype(int)\n",
+    "adult = adult.drop(columns=[\"sex\"])\n",
+    "print(adult[\"sex_female\"].value_counts(normalize=True))   # ~0.33 female"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "id": "a4a8715a-c664-413d-8140-9bbd1ad5865a",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Encoding: ['workclass', 'marital_status', 'occupation', 'race']\n",
+      "(32561, 43)\n"
+     ]
+    }
+   ],
+   "source": [
+    "cat_cols = adult.select_dtypes(include=\"object\").columns.tolist()\n",
+    "print(\"Encoding:\", cat_cols)   # workclass, marital_status, occupation, race\n",
+    "\n",
+    "adult = pd.get_dummies(adult, columns=cat_cols, dtype=int)\n",
+    "print(adult.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "12c24e52-3b1b-4c98-b1b2-bf9a6af68c95",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Features: 42 (Chapter Three states 42)\n"
+     ]
+    }
+   ],
+   "source": [
+    "n_features = adult.shape[1] - 1        # exclude target\n",
+    "assert adult.shape[0] == 32561, f\"Row count off: {adult.shape[0]}\"\n",
+    "assert adult.isna().sum().sum() == 0,  \"Missing values present\"\n",
+    "assert \"sex_female\" in adult.columns,  \"Fairness attribute lost\"\n",
+    "print(f\"Features: {n_features} (Chapter Three states 42)\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "06dd8b82-3852-4356-9042-4402a19b1b18",
+   "metadata": {},
+   "source": [
+    "## Validation gate: PASSED [2026-08-01]\n",
+    "\n",
+    "32,561 rows; 42 features (excl. target); 0 missing values; sex_female\n",
+    "present (~33% female); positive class ~24%. Output written to /processed."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "db199328-7c86-43ae-8c2f-1c2c711e5f36",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "adult.to_csv(f\"s3://{BUCKET}/processed/adult_final_pruned.csv\", index=False)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "edc041e0-1a93-43e0-a5d3-61cf7b9f3a88",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "conda_python3",
+   "language": "python",
+   "name": "conda_python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.20"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

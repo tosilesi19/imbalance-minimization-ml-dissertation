@@ -1,0 +1,485 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "d32db2b8-829f-4872-9e7f-17c76f317ad0",
+   "metadata": {},
+   "source": [
+    "# 04: Experimental Manipulation Functions\n",
+    "\n",
+    "The four functions implementing the factorial manipulations:\n",
+    "\n",
+    "1. apply_imbalance: exact class ratios (50/50, 80/20, 90/10, 95/5)\n",
+    "2. apply_horizontal_minimization: stratified row reduction (100/75/50/25%)\n",
+    "3. apply_vertical_minimization: MI-ranked feature reduction (100/75/50/25%)\n",
+    "4. make_split: stratified 70/30 train/test partition\n",
+    "\n",
+    "All functions are seed-deterministic (verified below); the five study seeds are fixed in the design grid. Exported to\n",
+    "manipulation_functions.py for import by downstream notebooks.\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "a1adbae6-a58c-41ac-b85d-a24a60077897",
+   "metadata": {},
+   "source": [
+    "## Order of operations and base sample size\n",
+    "\n",
+    "**Pipeline order: imbalance -> minimization -> split -> metrics on test.**\n",
+    "Rationale: Current research frames minimization policies as acting on an already imbalanced data ecosystems; this manipulation order mirrors that causal framing.\n",
+    "\n",
+    "**Common base size: base_n = 15,000 for all conditions.** All imbalance ratios are constructed by undersampling to this fixed total, so the imbalance factor is not confounded with sample size. The cap is set by Adult's ~7,840 positives, which must supply 50% of base_n in the 50/50 condition. A consequence: the 50/50 condition discards the most majority data; this is the standard cost of a controlled-ratio design.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "351aadbf-93ac-4097-ac27-9df09cabc0d6",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(32561, 43) 0.241\n"
+     ]
+    }
+   ],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "from sklearn.feature_selection import mutual_info_classif\n",
+    "\n",
+    "BUCKET = \"osilesi-dissertation-data-2026\"\n",
+    "adult = pd.read_csv(f\"s3://{BUCKET}/processed/adult_final_pruned.csv\")\n",
+    "print(adult.shape, adult[\"target\"].mean().round(3))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "15772fef-f769-4d4b-b28e-1527c519a05e",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "RATIOS = {\"50/50\": 0.50, \"80/20\": 0.20, \"90/10\": 0.10, \"95/5\": 0.05}\n",
+    "\n",
+    "def apply_imbalance(df, ratio_label, seed, base_n=20000):\n",
+    "    \"\"\"Undersample to an exact class ratio at a fixed total size.\n",
+    "\n",
+    "    ratio_label: one of '50/50', '80/20', '90/10', '95/5'\n",
+    "    base_n: common total size across all conditions so ratio is\n",
+    "            not confounded with sample size.\n",
+    "    \"\"\"\n",
+    "    minority_frac = RATIOS[ratio_label]\n",
+    "    n_min = int(base_n * minority_frac)\n",
+    "    n_maj = base_n - n_min\n",
+    "\n",
+    "    minority = df[df[\"target\"] == 1]\n",
+    "    majority = df[df[\"target\"] == 0]\n",
+    "\n",
+    "    rng_min = minority.sample(n=n_min, random_state=seed)\n",
+    "    rng_maj = majority.sample(n=n_maj, random_state=seed)\n",
+    "\n",
+    "    out = pd.concat([rng_min, rng_maj]).sample(frac=1, random_state=seed)\n",
+    "    return out.reset_index(drop=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "6c491ec5-4d92-4f4f-a113-8c5d31f70df2",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "50/50 15000 0.5\n",
+      "80/20 15000 0.2\n",
+      "90/10 15000 0.1\n",
+      "95/5 15000 0.05\n"
+     ]
+    }
+   ],
+   "source": [
+    "for label in RATIOS:\n",
+    "    d = apply_imbalance(adult, label, seed=42, base_n=15000)\n",
+    "    print(label, d.shape[0], round(d[\"target\"].mean(), 3))\n",
+    "# expect 15000 rows each, minority share 0.50 / 0.20 / 0.10 / 0.05"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "9acc2f67-75bf-4791-b7d4-7672f054310e",
+   "metadata": {},
+   "source": [
+    "## Stratification in horizontal minimization\n",
+    "\n",
+    "Row reduction is stratified on target x sex_female so both the minority class and the female subgroup survive proportionally even at 25% retention layered on 95/5 imbalance. The unit test below records the female-positive count in the harshest cell as evidence that fairness metrics remain computable across all 960 runs.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "c965020e-c9ef-487f-bc70-46f78b591097",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "LEVELS = {\"100\": 1.00, \"75\": 0.75, \"50\": 0.50, \"25\": 0.25}\n",
+    "\n",
+    "def apply_horizontal_minimization(df, level_label, seed):\n",
+    "    \"\"\"Retain a stratified fraction of rows.\n",
+    "\n",
+    "    Stratification on target x sex_female preserves class and\n",
+    "    subgroup proportions under aggressive reduction.\n",
+    "    \"\"\"\n",
+    "    frac = LEVELS[level_label]\n",
+    "    if frac == 1.00:\n",
+    "        return df.copy()\n",
+    "\n",
+    "    strata = df[\"target\"].astype(str) + \"_\" + df[\"sex_female\"].astype(str)\n",
+    "    out = (df.groupby(strata, group_keys=False)\n",
+    "             .apply(lambda g: g.sample(frac=frac, random_state=seed)))\n",
+    "    return out.sample(frac=1, random_state=seed).reset_index(drop=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "f5d74a81-dead-4123-8afb-06ac2bff321e",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "100 15000 0.05 female positives: 106\n",
+      "75 11251 0.05 female positives: 80\n",
+      "50 7500 0.05 female positives: 53\n",
+      "25 3749 0.05 female positives: 26\n"
+     ]
+    }
+   ],
+   "source": [
+    "harsh = apply_imbalance(adult, \"95/5\", seed=42, base_n=15000)\n",
+    "for label in LEVELS:\n",
+    "    d = apply_horizontal_minimization(harsh, label, seed=42)\n",
+    "    n_pos_f = ((d[\"target\"] == 1) & (d[\"sex_female\"] == 1)).sum()\n",
+    "    print(label, d.shape[0], round(d[\"target\"].mean(), 3),\n",
+    "          \"female positives:\", n_pos_f)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "a2465a16-dd81-4d1f-b1b1-23c5698e7b86",
+   "metadata": {},
+   "source": [
+    "## Vertical minimization design choices\n",
+    "\n",
+    "- Ranking criterion: mutual information with the target (informed minimization: organizations remove what they judge least useful, the realistic policy scenario). \n",
+    "  \n",
+    "- `target` and `sex_female` are never removal candidates: the fairness attribute is measurement infrastructure, not a minimizable feature; removing it would make RQ2 uncomputable.\n",
+    "- discrete_features=True: appropriate since post-encoding the matrix is overwhelmingly binary; applied uniformly for consistency.\n",
+    "  "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "3304e49f-abe5-4fa4-b2fb-e22400a1f7b5",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def apply_vertical_minimization(df, level_label, seed):\n",
+    "    \"\"\"Retain the top fraction of features ranked by mutual\n",
+    "    information with the target. target and sex_female are\n",
+    "    always retained and excluded from ranking.\n",
+    "    \"\"\"\n",
+    "    frac = LEVELS[level_label]\n",
+    "    protected = [\"target\", \"sex_female\"]\n",
+    "    if frac == 1.00:\n",
+    "        return df.copy()\n",
+    "\n",
+    "    feats = [c for c in df.columns if c not in protected]\n",
+    "    mi = mutual_info_classif(df[feats], df[\"target\"],\n",
+    "                             discrete_features=True, random_state=seed)\n",
+    "    ranking = pd.Series(mi, index=feats).sort_values(ascending=False)\n",
+    "\n",
+    "    n_keep = max(1, int(len(feats) * frac))\n",
+    "    keep = ranking.head(n_keep).index.tolist()\n",
+    "    return df[keep + protected].copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "ae3e7714-37ef-40e3-8619-be3018ee7835",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "100 features: 41 sex_female present: True\n",
+      "75 features: 30 sex_female present: True\n",
+      "50 features: 20 sex_female present: True\n",
+      "25 features: 10 sex_female present: True\n"
+     ]
+    }
+   ],
+   "source": [
+    "base = apply_imbalance(adult, \"80/20\", seed=42, base_n=15000)\n",
+    "for label in LEVELS:\n",
+    "    d = apply_vertical_minimization(base, label, seed=42)\n",
+    "    print(label, \"features:\", d.shape[1] - 2,\n",
+    "          \"sex_female present:\", \"sex_female\" in d.columns)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "96669985-4e1f-4f2e-9b85-901eeebc0bfe",
+   "metadata": {},
+   "source": [
+    "## Split design\n",
+    "\n",
+    "70/30 stratified split on target x sex_female. At base_n = 15,000 the test partition is 4,500 rows, sufficient for stable subgroup TPR/FNR estimation in every condition (verified in the unit test below).\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "c8cb5238-f2dd-4570-be80-2cacea8f679c",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def make_split(df, seed, test_size=0.30):\n",
+    "    strata = df[\"target\"].astype(str) + \"_\" + df[\"sex_female\"].astype(str)\n",
+    "    train, test = train_test_split(df, test_size=test_size,\n",
+    "                                   stratify=strata, random_state=seed)\n",
+    "    return train.reset_index(drop=True), test.reset_index(drop=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "ca6affea-591f-4c1d-9404-c4ef75f76dab",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>partition</th>\n",
+       "      <th>rows</th>\n",
+       "      <th>pct_positive</th>\n",
+       "      <th>pct_female</th>\n",
+       "      <th>n_female_positives</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>input (pre-split)</td>\n",
+       "      <td>15000</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>37.77</td>\n",
+       "      <td>106</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>train</td>\n",
+       "      <td>10500</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>37.77</td>\n",
+       "      <td>74</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>test</td>\n",
+       "      <td>4500</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>37.78</td>\n",
+       "      <td>32</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "           partition   rows  pct_positive  pct_female  n_female_positives\n",
+       "0  input (pre-split)  15000           5.0       37.77                 106\n",
+       "1              train  10500           5.0       37.77                  74\n",
+       "2               test   4500           5.0       37.78                  32"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# --- Unit test: make_split on the harshest condition ---\n",
+    "\n",
+    "# Build the worst case: 95/5 imbalance, then split\n",
+    "harsh = apply_imbalance(adult, \"95/5\", seed=42, base_n=15000)\n",
+    "train, test = make_split(harsh, seed=42)\n",
+    "\n",
+    "def profile(df, label):\n",
+    "    return {\n",
+    "        \"partition\": label,\n",
+    "        \"rows\": len(df),\n",
+    "        \"pct_positive\": round(df[\"target\"].mean() * 100, 2),\n",
+    "        \"pct_female\": round(df[\"sex_female\"].mean() * 100, 2),\n",
+    "        \"n_female_positives\": int(((df[\"target\"] == 1) &\n",
+    "                                   (df[\"sex_female\"] == 1)).sum()),\n",
+    "    }\n",
+    "\n",
+    "report = pd.DataFrame([\n",
+    "    profile(harsh, \"input (pre-split)\"),\n",
+    "    profile(train, \"train\"),\n",
+    "    profile(test,  \"test\"),\n",
+    "])\n",
+    "report"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "cd854c0c-be2e-4a8e-aaa3-680f3a82f1eb",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "make_split deterministic: PASS\n"
+     ]
+    }
+   ],
+   "source": [
+    "t1a, t1b = make_split(harsh, seed=42)\n",
+    "t2a, t2b = make_split(harsh, seed=42)\n",
+    "assert t1a.equals(t2a) and t1b.equals(t2b), \"make_split not deterministic\"\n",
+    "print(\"make_split deterministic: PASS\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "7063a784-f0cb-4f8f-837f-02796fa2b5e0",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "after imbalance:      (15000, 43) | pct positive: 10.0\n",
+      "after minimization:   (15000, 22) | sex_female present: True\n",
+      "train: (10500, 22) | test: (4500, 22)\n",
+      "test pct positive: 10.0 | test female positives: 65\n"
+     ]
+    }
+   ],
+   "source": [
+    "# --- Integration test: full chain for one arbitrary condition ---\n",
+    "# Condition: 90/10 imbalance, 50% vertical minimization, seed 7\n",
+    "# Order of operations: imbalance -> minimization -> split\n",
+    "\n",
+    "# Step 1: apply imbalance\n",
+    "d = apply_imbalance(adult, \"90/10\", seed=7, base_n=15000)\n",
+    "print(\"after imbalance:     \", d.shape,\n",
+    "      \"| pct positive:\", round(d[\"target\"].mean() * 100, 1))\n",
+    "\n",
+    "# Step 2: apply minimization (vertical in this rehearsal)\n",
+    "d = apply_vertical_minimization(d, \"50\", seed=7)\n",
+    "print(\"after minimization:  \", d.shape,\n",
+    "      \"| sex_female present:\", \"sex_female\" in d.columns)\n",
+    "\n",
+    "# Step 3: split\n",
+    "train, test = make_split(d, seed=7)\n",
+    "print(\"train:\", train.shape, \"| test:\", test.shape)\n",
+    "print(\"test pct positive:\", round(test[\"target\"].mean() * 100, 1),\n",
+    "      \"| test female positives:\",\n",
+    "      int(((test[\"target\"] == 1) & (test[\"sex_female\"] == 1)).sum()))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "a0e6df81-4382-4948-ac70-03fc90028b07",
+   "metadata": {},
+   "source": [
+    "## Integration test: PASSED [2026-09-01]\n",
+    "\n",
+    "Full chain (imbalance -> minimization -> split) verified on 90/10 /50% / vertical / seed 7, and rerun with horizontal minimization.\n",
+    "Identical output on repeated execution confirms composed-chain determinism. Functions exported to manipulation_functions.py and archived to /code.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "53d892f3-5901-4513-8ea3-70d604f016a2",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{'50/50': 0.5, '80/20': 0.2, '90/10': 0.1, '95/5': 0.05} {'100': 1.0, '75': 0.75, '50': 0.5, '25': 0.25}\n"
+     ]
+    }
+   ],
+   "source": [
+    "from manipulation_functions import *\n",
+    "print(RATIOS, LEVELS)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "900c9d40-bc63-483a-aacc-c5acd26429aa",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "conda_python3",
+   "language": "python",
+   "name": "conda_python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.20"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

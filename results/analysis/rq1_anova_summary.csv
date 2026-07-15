@@ -1,0 +1,16 @@
+DV,Effect,F,df,p,p_report
+accuracy,C(imbalance),788.42,"3, 944",1.5507886001252668e-256,< .001
+accuracy,C(min_level),0.11,"3, 944",0.9549168002677516,= 0.955
+accuracy,C(imbalance):C(min_level),0.02,"9, 944",0.9999998697463522,= 1.000
+minority_recall,C(imbalance),470.8,"3, 944",5.802016033798654e-187,< .001
+minority_recall,C(min_level),0.0,"3, 944",0.9997852415600144,= 1.000
+minority_recall,C(imbalance):C(min_level),0.02,"9, 944",0.999999819652448,= 1.000
+macro_f1,C(imbalance),60.24,"3, 944",1.226131724212981e-35,< .001
+macro_f1,C(min_level),0.01,"3, 944",0.9975157032979747,= 0.998
+macro_f1,C(imbalance):C(min_level),0.01,"9, 944",0.9999999351167735,= 1.000
+balanced_accuracy,C(imbalance),111.34,"3, 944",1.0062144141751394e-61,< .001
+balanced_accuracy,C(min_level),0.03,"3, 944",0.9942896724711521,= 0.994
+balanced_accuracy,C(imbalance):C(min_level),0.02,"9, 944",0.99999979622705,= 1.000
+mcc,C(imbalance),50.65,"3, 944",2.3303653526233165e-30,< .001
+mcc,C(min_level),0.06,"3, 944",0.9811984457727024,= 0.981
+mcc,C(imbalance):C(min_level),0.02,"9, 944",0.9999996062664376,= 1.000

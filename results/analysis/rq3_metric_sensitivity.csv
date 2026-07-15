@@ -1,0 +1,6 @@
+Metric,Type,Interaction_F,df,p,partial_eta_sq,Benign_corner,Harsh_corner,Delta,Direction
+accuracy,standard,0.02,"9, 944",= 1.000,0.0,0.719,0.952,0.233,increases
+minority_recall,imbalance-sensitive,0.02,"9, 944",= 1.000,0.0,0.712,0.139,-0.572,decreases
+macro_f1,imbalance-sensitive,0.01,"9, 944",= 1.000,0.0,0.719,0.585,-0.134,decreases
+balanced_accuracy,imbalance-sensitive,0.02,"9, 944",= 1.000,0.0,0.719,0.567,-0.152,decreases
+mcc,imbalance-sensitive,0.02,"9, 944",= 1.000,0.0,0.439,0.212,-0.227,decreases

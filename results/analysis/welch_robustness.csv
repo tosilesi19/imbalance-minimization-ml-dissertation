@@ -1,0 +1,15 @@
+DV,Factor,F,df1,df2,p,p_report
+accuracy,imbalance,2008.44,3,429.0,4.401864862968253e-252,< .001
+accuracy,min_level,0.03,3,531.1,0.9926644177478278,= 0.993
+minority_recall,imbalance,826.86,3,519.6,2.46950244327935e-197,< .001
+minority_recall,min_level,0.0,3,531.1,0.9999448413431401,= 1.000
+macro_f1,imbalance,75.59,3,526.6,1.1282746673196061e-40,< .001
+macro_f1,min_level,0.01,3,531.1,0.9979996423529391,= 0.998
+balanced_accuracy,imbalance,126.47,3,518.3,1.7967102702740678e-61,< .001
+balanced_accuracy,min_level,0.02,3,531.1,0.9962314435254987,= 0.996
+mcc,imbalance,54.28,3,530.2,1.309084356816495e-30,< .001
+mcc,min_level,0.05,3,531.1,0.9844918699996777,= 0.984
+equal_opportunity_diff,imbalance,9.77,3,528.3,2.7644239598995616e-06,< .001
+equal_opportunity_diff,min_level,1.08,3,530.0,0.3585032354144734,= 0.359
+fnr_diff,imbalance,9.77,3,528.3,2.7644239598995523e-06,< .001
+fnr_diff,min_level,1.08,3,530.0,0.35850323541447265,= 0.359

@@ -1,0 +1,7 @@
+DV,Effect,F,df,p,p_report
+equal_opportunity_diff,C(imbalance),8.49,"3, 944",1.4350807944327835e-05,< .001
+equal_opportunity_diff,C(min_level),1.28,"3, 944",0.2808013723681679,= 0.281
+equal_opportunity_diff,C(imbalance):C(min_level),0.74,"9, 944",0.6757483264936943,= 0.676
+fnr_diff,C(imbalance),8.49,"3, 944",1.4350807944328472e-05,< .001
+fnr_diff,C(min_level),1.28,"3, 944",0.2808013723681679,= 0.281
+fnr_diff,C(imbalance):C(min_level),0.74,"9, 944",0.6757483264936943,= 0.676

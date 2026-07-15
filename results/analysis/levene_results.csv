@@ -1,0 +1,8 @@
+DV,Levene_W,p
+accuracy,1841.612,0.0
+minority_recall,62.154,0.0
+macro_f1,29.472,0.0
+balanced_accuracy,48.71,0.0
+mcc,8.366,0.0
+equal_opportunity_diff,6.32,0.0
+fnr_diff,6.32,0.0
